@@ -1,32 +1,105 @@
 <template>
   <div id="app">
-    <div id="nav">
-      <router-link to="/">Home</router-link> |
-      <router-link to="/about">About</router-link>
-    </div>
-    <router-view />
+    <Navigation :user="user " @logout="logout" @addRoom="addRoom"/>
+    <router-view :user="user" :rooms="rooms" @logout="logout" @addRoom="addRoom" @deleteRoom="deleteRoom" @checkin="checkIn"/>
   </div>
 </template>
 
-<style lang="scss">
-#app {
-  font-family: Avenir, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-align: center;
-  color: #2c3e50;
-}
+<script>
+import Navigation from '@/components/Navigation'
+import db from "@/db";
+import Firebase from "firebase";
 
-#nav {
-  padding: 30px;
 
-  a {
-    font-weight: bold;
-    color: #2c3e50;
 
-    &.router-link-exact-active {
-      color: #42b983;
+
+export default {
+  name: 'App',
+  data: () => {
+    return {
+      user: null,
+      rooms: []
     }
-  }
+  },
+  methods: {
+    logout: function() {
+      Firebase.auth().signOut().then(() => {
+        this.user = null
+        this.$router.replace('/login')
+      })
+    },
+    deleteRoom: function(payload) {
+      db.collection('users')
+      .doc(this.user.uid)
+      .collection('rooms')
+      .doc(payload)
+      .delete()
+    },
+    checkIn: function(payload) {
+      const roomRef = db
+          .collection('users')
+          .doc(payload.hostID)
+          .collection('rooms')
+          .doc(payload.roomID)
+
+      roomRef.get().then(doc => {
+        if((doc.exists)) {
+          roomRef
+              .collection('attendees')
+              .doc(this.user.uid)
+              .set({
+                  displayName: payload.displayName,
+                  createdAt: Firebase.firestore.FieldValue.serverTimestamp()
+              })
+              .then(() => this.$router.push(`/chat/${payload.hostID}/${payload.roomID}`))
+        }
+      })
+    },
+    addRoom: function(payload) {
+      db
+        .collection('users')
+        .doc(this.user.uid)
+        .collection('rooms')
+        .add({
+          name: payload,
+          createdAt: Firebase.firestore.FieldValue.serverTimestamp()
+        })
+    }
+  },
+  mounted() {
+    Firebase.auth().onAuthStateChanged(user => {
+      if (user) {
+        this.user = user;
+        db.collection('users')
+        .doc(this.user.uid)
+        .collection('rooms')
+        .onSnapshot(snapshot => {
+          const snapData = []
+          snapshot.forEach(doc => {
+            snapData.push({
+              id: doc.id,
+              name: doc.data().name
+            })
+            this.rooms = snapData.sort((a, b) => {
+              if (a.name.toLowerCase() < b.name.toLowerCase()) {
+                return -1
+              } else {
+                return 1
+              }
+            })
+          })
+        })
+      }
+    })
+  },
+  components: {
+    Navigation
+  },
+
 }
+</script>
+
+<style lang="scss">
+  $primary: #5f2882;
+  @import 'node_modules/bootstrap/scss/bootstrap';
 </style>
